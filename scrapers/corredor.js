@@ -1,21 +1,24 @@
+const { detectarIncidentes, incidentesAEstado } = require("../utils/detector_incidentes");
 const db = require("../firebase");
 const admin = require("firebase-admin");
 
 async function actualizarCorredores() {
-  try {
+  console.log("🚌 Corredores — scraping...");
 
-    await db.collection("estado_servicio")
-      .doc("corredores")
-      .set({
-        Estado: "Operando con Normalidad",
-        Ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
+  const incidentes = await detectarIncidentes("Corredor transporte CDMX BRT");
+  const estadoGeneral = incidentesAEstado(incidentes);
+  const fuente = incidentes.length > 0 ? "noticias" : "estimado";
 
-    console.log("Corredores actualizado");
+  await db.collection("estado_servicio").doc("corredores").set(
+    {
+      Estado: estadoGeneral,
+      fuente,
+      Ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
 
-  } catch (error) {
-    console.error("Error actualizando Corredores:", error);
-  }
+  console.log(`✅ Corredores — ${estadoGeneral} — fuente: ${fuente}`);
 }
 
 module.exports = actualizarCorredores;

@@ -1,26 +1,25 @@
+const { detectarIncidentes, incidentesAEstado } = require("../utils/detector_incidentes");
 const db = require("../firebase");
 const admin = require("firebase-admin");
 
 async function actualizarMexicable() {
-  try {
+  console.log("🚠 Mexicable — scraping...");
 
-    const estados = {
-      Linea_1: "Operando con Normalidad",
-      Linea_2: "Operando con Normalidad"
-    };
+  const incidentes = await detectarIncidentes("Mexicable Estado de México teleférico");
+  const estadoGeneral = incidentesAEstado(incidentes);
+  const fuente = incidentes.length > 0 ? "noticias" : "estimado";
 
-    await db.collection("estado_servicio")
-      .doc("mexicable")
-      .set({
-        ...estados,
-        Ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp()
-      }, { merge: true });
+  await db.collection("estado_servicio").doc("mexicable").set(
+    {
+      Linea_1: estadoGeneral,
+      Linea_2: estadoGeneral,
+      fuente,
+      Ultima_actualizacion: admin.firestore.FieldValue.serverTimestamp(),
+    },
+    { merge: true }
+  );
 
-    console.log("Mexicable actualizado");
-
-  } catch (error) {
-    console.error("Error actualizando Mexicable:", error);
-  }
+  console.log(`✅ Mexicable — ${estadoGeneral} — fuente: ${fuente}`);
 }
 
 module.exports = actualizarMexicable;

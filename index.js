@@ -1,39 +1,111 @@
-const scrapeMetro = require("./scrapers/metro");
-const scrapeMetrobus = require("./scrapers/metrobus");
-const scrapeCablebus = require("./scrapers/cablebus");
-const scrapeMexibus = require("./scrapers/mexibus");
-const scrapeMexicable = require("./scrapers/mexicable");
-const scrapeRTP = require("./scrapers/rtp");
-const scrapeCorredor = require("./scrapers/corredor");
+const scrapeMetro          = require("./scrapers/metro");
+const scrapeMetrobus       = require("./scrapers/metrobus");
+const scrapeCablebus       = require("./scrapers/cablebus");
+const scrapeMexibus        = require("./scrapers/mexibus");
+const scrapeMexicable      = require("./scrapers/mexicable");
+const scrapeRTP            = require("./scrapers/rtp");
+const scrapeCorredor       = require("./scrapers/corredor");
 const scrapeTrenInterurbano = require("./scrapers/tren_interurbano");
-const scrapeTrenLigero = require("./scrapers/tren_ligero");
-const scrapeTrenSuburbano = require("./scrapers/tren_suburbano");
-const scrapeTrolebus = require("./scrapers/trolebus");
+const scrapeTrenLigero     = require("./scrapers/tren_ligero");
+const scrapeTrenSuburbano  = require("./scrapers/tren_suburbano");
+const scrapeTrolebus       = require("./scrapers/trolebus");
 
-async function runScrapers() {
-  try {
-    console.log("Iniciando scrapers...");
+const scrapearClima    = require("./utils/clima");
+const scrapearTrafico  = require("./utils/trafico");
+const scrapearNoticias = require("./utils/noticias");
 
-    await Promise.all([
-      scrapeMetro(),
-      scrapeMetrobus(),
-      scrapeCablebus(),
-      scrapeMexibus(),
-      scrapeMexicable(),
-      scrapeRTP(),
-      scrapeCorredor(),
-      scrapeTrenInterurbano(),
-      scrapeTrenLigero(),
-      scrapeTrenSuburbano(),
-      scrapeTrolebus()
-    ]);
+const { cerrarNavegador } = require("./utils/navegador");
 
-    console.log("Todos los scrapers terminaron correctamente");
+// ─────────────────────────────────────────────
+//  Intervalos
+// ─────────────────────────────────────────────
+const INTERVALO_TRANSPORTE = 5  * 60 * 1000; //  5 min
+const INTERVALO_CONTEXTO   = 10 * 60 * 1000; // 10 min
+const INTERVALO_NOTICIAS   = 30 * 60 * 1000; // 30 min
 
-  } catch (error) {
-    console.error("Error ejecutando scrapers:", error);
-    process.exit(1);
-  }
+const scrapers_transporte = {
+  metro:           scrapeMetro,
+  metrobus:        scrapeMetrobus,
+  cablebus:        scrapeCablebus,
+  mexibus:         scrapeMexibus,
+  mexicable:       scrapeMexicable,
+  rtp:             scrapeRTP,
+  corredor:        scrapeCorredor,
+  tren_interurbano: scrapeTrenInterurbano,
+  tren_ligero:     scrapeTrenLigero,
+  tren_suburbano:  scrapeTrenSuburbano,
+  trolebus:        scrapeTrolebus,
+};
+
+// ─────────────────────────────────────────────
+//  Ciclo de transporte (cada 5 min)
+// ─────────────────────────────────────────────
+async function runTransporte() {
+  console.log(`\n🚀 [${new Date().toLocaleTimeString("es-MX", { timeZone: "America/Mexico_City" })}] Actualizando estado de transporte...`);
+
+  const results = await Promise.allSettled(
+    Object.values(scrapers_transporte).map((fn) => fn())
+  );
+
+  Object.keys(scrapers_transporte).forEach((nombre, idx) => {
+    if (results[idx].status === "rejected") {
+      console.error(`  ❌ ${nombre}:`, results[idx].reason?.message ?? results[idx].reason);
+    }
+  });
+
+  console.log("🏁 Transporte actualizado\n");
 }
 
-runScrapers();
+// ─────────────────────────────────────────────
+//  Ciclo de contexto: clima + tráfico (cada 10 min)
+// ─────────────────────────────────────────────
+async function runContexto() {
+  console.log(`\n🌤️  [${new Date().toLocaleTimeString("es-MX", { timeZone: "America/Mexico_City" })}] Actualizando clima y tráfico...`);
+
+  await Promise.allSettled([
+    scrapearClima(),
+    scrapearTrafico(),
+  ]);
+
+  console.log("🏁 Contexto actualizado\n");
+}
+
+// ─────────────────────────────────────────────
+//  Ciclo de noticias (cada 30 min)
+// ─────────────────────────────────────────────
+async function runNoticias() {
+  console.log(`\n📰 [${new Date().toLocaleTimeString("es-MX", { timeZone: "America/Mexico_City" })}] Actualizando noticias...`);
+  await scrapearNoticias();
+  console.log("🏁 Noticias actualizadas\n");
+}
+
+// ─────────────────────────────────────────────
+//  Arranque
+// ─────────────────────────────────────────────
+async function start() {
+  console.log("═══════════════════════════════════════════");
+  console.log("  Movilidad Integrada — Scraper v2");
+  console.log(`  Transporte:  cada ${INTERVALO_TRANSPORTE / 60000} min`);
+  console.log(`  Clima/Tráfico: cada ${INTERVALO_CONTEXTO / 60000} min`);
+  console.log(`  Noticias:    cada ${INTERVALO_NOTICIAS / 60000} min`);
+  console.log("═══════════════════════════════════════════\n");
+
+  // Ejecución inmediata al arrancar
+  await runContexto();
+  await runNoticias();
+  await runTransporte();
+
+  // Programar intervalos
+  setInterval(runTransporte, INTERVALO_TRANSPORTE);
+  setInterval(runContexto,   INTERVALO_CONTEXTO);
+  setInterval(runNoticias,   INTERVALO_NOTICIAS);
+}
+
+// Cerrar el navegador al terminar el proceso
+process.on("SIGINT",  async () => { await cerrarNavegador(); process.exit(0); });
+process.on("SIGTERM", async () => { await cerrarNavegador(); process.exit(0); });
+
+start().catch((err) => {
+  console.error("❌ Error fatal al arrancar:", err);
+  process.exit(1);
+});
