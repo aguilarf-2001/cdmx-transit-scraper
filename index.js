@@ -80,32 +80,30 @@ async function runNoticias() {
 }
 
 // ─────────────────────────────────────────────
-//  Arranque
+//  Arranque — modo one-shot (GitHub Actions / cron externo)
+//  El scheduling lo maneja el workflow, no el proceso.
 // ─────────────────────────────────────────────
 async function start() {
   console.log("═══════════════════════════════════════════");
-  console.log("  Movilidad Integrada — Scraper v2");
-  console.log(`  Transporte:  cada ${INTERVALO_TRANSPORTE / 60000} min`);
-  console.log(`  Clima/Tráfico: cada ${INTERVALO_CONTEXTO / 60000} min`);
-  console.log(`  Noticias:    cada ${INTERVALO_NOTICIAS / 60000} min`);
+  console.log("  Movilidad Integrada — Scraper v2 (one-shot)");
+  console.log(`  ${new Date().toLocaleString("es-MX", { timeZone: "America/Mexico_City" })}`);
   console.log("═══════════════════════════════════════════\n");
 
-  // Ejecución inmediata al arrancar
   await runContexto();
   await runNoticias();
   await runTransporte();
 
-  // Programar intervalos
-  setInterval(runTransporte, INTERVALO_TRANSPORTE);
-  setInterval(runContexto,   INTERVALO_CONTEXTO);
-  setInterval(runNoticias,   INTERVALO_NOTICIAS);
+  await cerrarNavegador();
+  console.log("\n✅ Ciclo completo. Proceso terminado.");
 }
 
-// Cerrar el navegador al terminar el proceso
 process.on("SIGINT",  async () => { await cerrarNavegador(); process.exit(0); });
 process.on("SIGTERM", async () => { await cerrarNavegador(); process.exit(0); });
 
-start().catch((err) => {
-  console.error("❌ Error fatal al arrancar:", err);
-  process.exit(1);
-});
+start()
+  .then(() => process.exit(0))
+  .catch(async (err) => {
+    console.error("❌ Error fatal:", err);
+    await cerrarNavegador();
+    process.exit(1);
+  });
