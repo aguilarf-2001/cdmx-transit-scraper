@@ -13,6 +13,7 @@ const scrapeTrolebus       = require("./scrapers/trolebus");
 const scrapearClima    = require("./utils/clima");
 const scrapearTrafico  = require("./utils/trafico");
 const scrapearNoticias = require("./utils/noticias");
+const generarAlertas   = require("./utils/alertas");
 
 const { cerrarNavegador } = require("./utils/navegador");
 
@@ -62,10 +63,13 @@ async function runTransporte() {
 async function runContexto() {
   console.log(`\n🌤️  [${new Date().toLocaleTimeString("es-MX", { timeZone: "America/Mexico_City" })}] Actualizando clima y tráfico...`);
 
+  // Clima y tráfico en paralelo, luego alertas (depende del clima ya escrito)
   await Promise.allSettled([
     scrapearClima(),
     scrapearTrafico(),
   ]);
+
+  await generarAlertas();
 
   console.log("🏁 Contexto actualizado\n");
 }
