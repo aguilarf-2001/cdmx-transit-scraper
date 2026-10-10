@@ -14,6 +14,7 @@ const scrapearClima    = require("./utils/clima");
 const scrapearTrafico  = require("./utils/trafico");
 const scrapearNoticias = require("./utils/noticias");
 const generarAlertas   = require("./utils/alertas");
+const aplicarCondiciones = require("./utils/condiciones");
 
 const { cerrarNavegador } = require("./utils/navegador");
 
@@ -53,6 +54,11 @@ async function runTransporte() {
       console.error(`  ❌ ${nombre}:`, results[idx].reason?.message ?? results[idx].reason);
     }
   });
+
+  // Después de los operadores, nunca antes: lo derivado del clima, del tráfico
+  // y de la incidencia del día solo se aplica a la línea que el operador deja
+  // en normal, así que necesita su dato ya escrito.
+  await aplicarCondiciones();
 
   console.log("🏁 Transporte actualizado\n");
 }
