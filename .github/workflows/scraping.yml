@@ -10,13 +10,15 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # v5 porque las v4 corren sobre Node 20, que GitHub ya fuerza a 24 y
+      # avisa en cada run.
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
-          node-version: 20
+          node-version: 22
 
       - name: Install dependencies
         run: npm install
