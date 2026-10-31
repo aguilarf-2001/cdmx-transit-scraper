@@ -1,30 +1,46 @@
 name: Scraping CDMX Transit
 
+# ── Cómo se ejecuta cada 10 minutos ──────────────────────────────────────────
+# El cron de GitHub Actions NO garantiza la hora: en este proyecto llegó a
+# ejecutarse unas 5 veces al día en vez de cada 5 minutos, y el estado de
+# servicio se quedaba horas sin actualizarse. Cloud Scheduler (Firebase) sí es
+# puntual, pero exige el plan de pago.
+#
+# Solución gratuita: cada ejecución, al terminar, espera hasta cumplir 10
+# minutos desde que empezó y lanza la siguiente (`workflow_dispatch`, que
+# arranca de inmediato y no está sujeto al retraso del cron). Es una cadena:
+#   · para detenerla: cancela la ejecución en curso en la pestaña Actions
+#   · para reanudarla: "Run workflow" a mano, o espera al cron horario de abajo
 on:
-  # El cron de GitHub no garantiza la hora (llegó a ejecutarse unas 5 veces al
-  # día en vez de cada 5 minutos). Quien lo ejecuta de forma puntual es la
-  # función `dispararScraping` de Firebase, cada 10 minutos, mediante
-  # `workflow_dispatch`. Este cron queda solo como respaldo.
+  # Respaldo: si la cadena se rompe (fallo de GitHub, cancelación...), esto la
+  # reanuda. No se usa como disparador principal porque llega con horas de
+  # retraso.
   schedule:
-    # Cada 10 minutos: es la frecuencia con la que cambian de verdad los
-    # partes de los operadores, y deja margen para que un ciclo termine antes
-    # de que empiece el siguiente. La app marca los datos como desactualizados
-    # a partir de 25 minutos sin cambios (ver `_umbralDatosViejos`).
-    - cron: "*/10 * * * *"
+    - cron: "17 * * * *"
   workflow_dispatch:
 
-# Un ciclo lento no debe solaparse con el siguiente: dos procesos escribiendo
-# el mismo documento a la vez dejan estados mezclados.
+# Una sola ejecución a la vez: dos procesos escribiendo el mismo documento
+# dejan estados mezclados. Si se acumulan, GitHub conserva solo la más reciente
+# en espera, así que la cadena nunca se duplica.
 concurrency:
   group: scraping
   cancel-in-progress: false
 
+permissions:
+  contents: read
+  actions: write   # necesario para que la ejecución lance la siguiente
+
 jobs:
   scrape:
     runs-on: ubuntu-latest
-    timeout-minutes: 9
+    # ~1 min de trabajo + hasta ~9 de espera. Si algo se cuelga, no se queda
+    # una ejecución abierta para siempre.
+    timeout-minutes: 15
 
     steps:
+      - name: Marca de inicio
+        run: echo "INICIO=$(date +%s)" >> "$GITHUB_ENV"
+
       # v5 porque las v4 corren sobre Node 20, que GitHub ya fuerza a 24 y
       # avisa en cada run.
       - name: Checkout repository
@@ -34,11 +50,36 @@ jobs:
         uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
 
       - name: Install dependencies
         run: npm install
 
       - name: Run scrapers
+        timeout-minutes: 8
         run: node index.js
         env:
           FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+
+      # Se ejecuta aunque el scraper haya fallado: un fallo puntual no debe
+      # romper la cadena. Solo se omite si alguien cancela la ejecución.
+      - name: Esperar y lanzar la siguiente
+        if: ${{ !cancelled() }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          ESPERA=$(( 600 - ( $(date +%s) - INICIO ) ))
+          if [ "$ESPERA" -gt 0 ]; then
+            echo "Esperando ${ESPERA}s para completar los 10 minutos"
+            sleep "$ESPERA"
+          fi
+          for intento in 1 2 3; do
+            if gh workflow run scraping.yml --ref "${{ github.ref_name }}"; then
+              echo "Siguiente ejecución lanzada"
+              exit 0
+            fi
+            echo "No se pudo lanzar (intento $intento); reintentando"
+            sleep 15
+          done
+          echo "::error::No se pudo lanzar la siguiente ejecución; la reanudará el cron horario"
+          exit 1

@@ -18,6 +18,11 @@ const aplicarCondiciones = require("./utils/condiciones");
 
 const { cerrarNavegador } = require("./utils/navegador");
 
+const db = require("./firebase");
+const admin = require("firebase-admin");
+const { purgarIncidencias } = require("./utils/reinicio_incidencias");
+const { avisarIncidencias, avisarEstado, leerEstados } = require("./utils/avisos");
+
 // ─────────────────────────────────────────────
 //  Intervalos
 // ─────────────────────────────────────────────
@@ -90,6 +95,54 @@ async function runNoticias() {
 }
 
 // ─────────────────────────────────────────────
+//  Mantenimiento y avisos push (sustituye a Cloud Functions)
+//
+//  Cloud Functions exige el plan de pago de Firebase; el scraper ya corre
+//  gratis cada ~10 min con credenciales de administrador, así que lo que
+//  haría una función lo hace aquí:
+//    · borra las incidencias anteriores a las 2:00 a. m. (CDMX): ninguna
+//      incidencia vive más de un día
+//    · avisa de incidencias nuevas y resueltas
+//    · avisa de los cambios de estado de cada sistema
+//  Cada paso va aislado: un fallo aquí nunca debe tirar la actualización del
+//  estado de servicio, que ya quedó escrita.
+// ─────────────────────────────────────────────
+async function runMantenimiento(estadosAntes) {
+  console.log("\n🧹 Mantenimiento y avisos...");
+
+  try {
+    const borradas = await purgarIncidencias(db);
+    console.log(`  🗑️  incidencias vencidas borradas: ${borradas}`);
+  } catch (e) {
+    console.error("  ❌ borrado de incidencias:", e.message);
+  }
+
+  let messaging;
+  try {
+    messaging = admin.messaging();
+  } catch (e) {
+    console.error("  ❌ FCM no disponible:", e.message);
+    return;
+  }
+
+  try {
+    const n = await avisarIncidencias(db, messaging);
+    console.log(`  📣 avisos de incidencias enviados: ${n}`);
+  } catch (e) {
+    console.error("  ❌ avisos de incidencias:", e.message);
+  }
+
+  try {
+    if (estadosAntes) {
+      const n = await avisarEstado(messaging, estadosAntes, await leerEstados(db));
+      console.log(`  📣 avisos de estado enviados: ${n}`);
+    }
+  } catch (e) {
+    console.error("  ❌ avisos de estado:", e.message);
+  }
+}
+
+// ─────────────────────────────────────────────
 //  Arranque — modo one-shot (GitHub Actions / cron externo)
 //  El scheduling lo maneja el workflow, no el proceso.
 // ─────────────────────────────────────────────
@@ -99,9 +152,13 @@ async function start() {
   console.log(`  ${new Date().toLocaleString("es-MX", { timeZone: "America/Mexico_City" })}`);
   console.log("═══════════════════════════════════════════\n");
 
+  // Foto del estado ANTES del ciclo, para saber después qué cambió.
+  const estadosAntes = await leerEstados(db).catch(() => null);
+
   await runContexto();
   await runNoticias();
   await runTransporte();
+  await runMantenimiento(estadosAntes);
 
   await cerrarNavegador();
   console.log("\n✅ Ciclo completo. Proceso terminado.");
