@@ -142,7 +142,7 @@ function elegirEvento(dia, pares) {
     causa: incidencia.causa,
     nivel,
     estado: incidencia[nivel],
-    origen: "incidencia_operativa",
+    origen: "simulacion",
     inicioMin,
     finMin: inicioMin + duracion,
     inicio: hhmm(inicioMin),
@@ -151,12 +151,26 @@ function elegirEvento(dia, pares) {
 }
 
 /**
+ * ¿Está activa la incidencia de demostración?
+ *
+ * **Apagada por defecto.** Este módulo inventa una incidencia diaria que no
+ * corresponde a ningún hecho real: útil para demostrar cómo se ve una línea
+ * con problemas, engañosa si llega a usuarios como si fuera información del
+ * servicio. Las incidencias reales las registra el administrador desde la app
+ * (colección `incidencias`). Para una demostración, arrancar el scraper con
+ * `EVENTO_SIMULADO=1`.
+ */
+const SIMULACION_ACTIVA = process.env.EVENTO_SIMULADO === "1";
+
+/**
  * La incidencia del día, o null si ahora mismo no está en su ventana.
  *
  * Siempre deja constancia en `contexto/evento_dia`, también fuera de la
  * ventana, para poder ver a qué hora le toca.
  */
 async function eventoDelDia(docs) {
+  if (!SIMULACION_ACTIVA) return null;
+
   try {
     const pares = paresDeDocumentos(
       docs ?? (await db.collection("estado_servicio").get()).docs);
@@ -187,4 +201,4 @@ async function eventoDelDia(docs) {
   }
 }
 
-module.exports = { eventoDelDia, elegirEvento };
+module.exports = { eventoDelDia, elegirEvento, SIMULACION_ACTIVA };

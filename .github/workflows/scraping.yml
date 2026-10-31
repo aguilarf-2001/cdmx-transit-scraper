@@ -1,13 +1,28 @@
 name: Scraping CDMX Transit
 
 on:
+  # El cron de GitHub no garantiza la hora (llegó a ejecutarse unas 5 veces al
+  # día en vez de cada 5 minutos). Quien lo ejecuta de forma puntual es la
+  # función `dispararScraping` de Firebase, cada 10 minutos, mediante
+  # `workflow_dispatch`. Este cron queda solo como respaldo.
   schedule:
-    - cron: "*/5 * * * *"
+    # Cada 10 minutos: es la frecuencia con la que cambian de verdad los
+    # partes de los operadores, y deja margen para que un ciclo termine antes
+    # de que empiece el siguiente. La app marca los datos como desactualizados
+    # a partir de 25 minutos sin cambios (ver `_umbralDatosViejos`).
+    - cron: "*/10 * * * *"
   workflow_dispatch:
+
+# Un ciclo lento no debe solaparse con el siguiente: dos procesos escribiendo
+# el mismo documento a la vez dejan estados mezclados.
+concurrency:
+  group: scraping
+  cancel-in-progress: false
 
 jobs:
   scrape:
     runs-on: ubuntu-latest
+    timeout-minutes: 9
 
     steps:
       # v5 porque las v4 corren sobre Node 20, que GitHub ya fuerza a 24 y
